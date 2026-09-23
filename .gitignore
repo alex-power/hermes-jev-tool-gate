@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+*.env
+!*.env.example
+.hermes/
+.hermes-catalog.json
+.pytest_cache/
+.DS_Store
+Thumbs.db

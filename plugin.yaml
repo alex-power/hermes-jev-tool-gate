@@ -1,0 +1,43 @@
+name: jev-tool-gate
+version: 0.1.0
+description: >
+  Gate agent tool calls with Jev, TypeSafe AI's System One decision model, served
+  through the OpenRouter System One / Decisions API. Captures the user's request on
+  pre_llm_call, then on every pre_tool_call asks Jev whether that exact call is
+  authorized and how risky it is. High probability allows, mid-band escalates to the
+  human approval gate, low probability blocks.
+requires_hermes: ">=0.19"
+requires_env:
+  - name: OPENROUTER_API_KEY
+provides_hooks:
+  - pre_llm_call
+  - pre_tool_call
+config_schema:
+  mode:
+    type: str
+  model:
+    type: str
+  accept_threshold:
+    type: float
+  escalate_threshold:
+    type: float
+  timeout_s:
+    type: float
+  retries:
+    type: int
+  retry_backoff_s:
+    type: float
+  cache_ttl_s:
+    type: float
+  breaker_threshold:
+    type: int
+  breaker_cooldown_s:
+    type: float
+  fail_mode:
+    type: str
+  max_history_turns:
+    type: int
+  gated_tools:
+    type: list
+  log_decisions:
+    type: bool
