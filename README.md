@@ -12,6 +12,11 @@ the user asked for, and how bad is it if it isn't?*
 No new credential: it runs on the `OPENROUTER_API_KEY` you already have. It does not
 need a TypeSafe account.
 
+> **Read the comparison section before installing.** This is a small plugin in a crowded
+> field. Several Jev plugins for Hermes are more capable than this one, and two of them
+> already cover most of what it does. That section is the honest placement, verified
+> against the catalog and GitHub rather than assumed.
+
 ## How it works
 
 Two hooks, because neither is sufficient alone:
@@ -35,9 +40,8 @@ p >= escalate_threshold (0.35)  -> {"action": "approve"} -> Hermes's native appr
 p <  escalate_threshold         -> {"action": "block"}, numbers included in the tool result
 ```
 
-The middle band is the point. Rather than a binary allow/deny, an ambiguous call is
-escalated into Hermes's own approval path, so it pauses for a human instead of being
-refused — and an `[a]lways` approval is remembered per tool via `rule_key`.
+The middle band means an ambiguous call pauses for a human rather than being refused —
+and an `[a]lways` approval is remembered per tool via `rule_key`.
 
 ## Measured behaviour
 
@@ -90,6 +94,12 @@ tail -f "$HERMES_HOME/logs/jev-tool-gate.jsonl"
 is deliberate: it is how you collect evidence about your own traffic before letting a
 probability threshold change agent behaviour. Flip to `enforce` when the log shows the
 verdicts you would have made yourself.
+
+Worth knowing before you do: a comparable gate
+([hermes-jev-guard](https://github.com/rubichandrap/hermes-jev-guard)) reported 38 scored
+tool calls with **0 escalations and 0 blocks, mean risk 0.057** — on real coding traffic
+the gate essentially never fires. A quiet log is the expected outcome, not a sign the
+plugin is broken.
 
 ## Configuration
 
@@ -170,54 +180,88 @@ not halt the whole trading system") — and it is what this gate does.
 
 ## How this compares to other Jev plugins
 
-Being straight about it: **the architecture here is not novel.** Several Jev plugins
-already exist for Hermes, and the closest one overlaps substantially. What follows is the
-placement, verified against the live catalog (285 entries, 14 of them Jev/TypeSafe
-related) rather than assumed.
+Plainly: **the architecture here is not novel, and it is not the most capable option.**
+The Jev ecosystem around Hermes is large — the live catalog lists 285 entries, 14 of them
+Jev/TypeSafe related, and a GitHub search finds 17+ Hermes+Jev repositories. Several do
+what this does, and at least two do more.
 
-**`jev-judge`** ([DoGMaTiiC/hermes-jev](https://github.com/DoGMaTiiC/hermes-jev)) is the
-nearest neighbour: a `pre_tool_call` gate on `terminal`/`write_file`/`patch` with
-`shadow`/`enforce` modes, fail-open behaviour, thresholds in code, and a JSONL decision
-log. Same shape as this plugin, adapted from [pi-jev](https://github.com/y0usaf/pi-jev).
-If you want TypeSafe-direct or Vercel AI Gateway credentials, use it.
+**The closest match already ships what this plugin's headline feature is.**
+[`hermes-jev-guard`](https://github.com/rubichandrap/hermes-jev-guard) has a
+`pre_tool_call` risk gate with **`approve_at: 0.7` → human approval prompt and
+`block_at: 0.97` → block** — the same three-band escalation, on the same hooks, with the
+same 8-second timeout, plus `risk_tools` scoping, a `pre_llm_call` plan injected per turn,
+a `pre_verify` done-check, an `llm_request` model-tier middleware, a JSONL flow log, and a
+shell-hooks path that works without the plugin. It uses `TYPESAFE_API_KEY`. If you want a
+tool-risk gate today, **use that one.**
 
-What is actually different here:
+[`DoGMaTiiC/hermes-jev`](https://github.com/DoGMaTiiC/hermes-jev)'s `jev-judge` is the
+simpler twin: a `pre_tool_call` gate on `terminal`/`write_file`/`patch` with
+`shadow`/`enforce` modes, fail-open, thresholds in code, JSONL logging, and a single
+retry that honours `Retry-After`. Adapts [pi-jev](https://github.com/y0usaf/pi-jev).
 
-- **Credential.** This is the only hook-based Jev gate that runs on a plain OpenRouter
-  key. `jev-judge` wants `TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY`; `jev-approvals`,
-  `jev-typesafe` and `jev` want `TYPESAFE_API_KEY`; `jev-effort-router` also uses
-  OpenRouter but is an `llm_request` model router, not a tool gate.
-- **Escalation.** Ambiguous calls become `{"action": "approve"}` — Hermes's own approval
-  gate, with an `[a]lways`-style `rule_key`. Most Jev gates are binary allow/deny or
-  shadow/enforce. `jev-approvals` reaches the approval subsystem too, but as the
-  smart-approval *reviewer*, not through a hook directive.
-- **Conversation-aware state.** `jev-judge`'s README does not describe feeding prior
-  turns to Jev; this plugin pairs `pre_llm_call` intent capture with the gate so Jev
-  judges the call against what was actually asked, including across turns.
-- **Documented reliability engineering**, measured rather than assumed: the 8 s timeout
+[`kennedy-f/hermes-jev-decision-layer`](https://github.com/kennedy-f/hermes-jev-decision-layer)
+(plugin `jev-decision-gate`) already uses **OpenRouter's Decisions endpoint, the
+`typesafe/jev-1.13` model and `OPENROUTER_API_KEY`** — so OpenRouter transport is not
+unique here either. It is deliberately shadow-only: its hooks always return `None` and it
+"never changes whether Hermes runs a tool."
+
+**A different, arguably better-integrated approach to the adjacent problem:**
+[`anpicasso/hermes-jev-approvals`](https://github.com/anpicasso/hermes-jev-approvals)
+(MIT, v0.3.0, 14★) does not add a hook at all. It replaces Hermes's
+`auxiliary.approval` reviewer under `approvals.mode: smart`, registering no hooks and
+working with core as shipped — so it gates *exactly the commands core already flags*
+instead of re-implementing detection. It reports measured results (8.7× faster, 4.4× fewer
+prompts on 153 real commands) and asks six typed questions including `self_advocating`, a
+prompt-injection check on whether the command argues for its own approval. **If your
+interest is approvals, start there.**
+
+**The ecosystem flagship:** [`kerpopule/hermes-jev-skills`](https://github.com/kerpopule/hermes-jev-skills)
+(697★) uses Jev for model routing, memory filtering, compaction, skill selection, search,
+triage, mail sorting and computer/browser use — via `pre_llm_call`, `llm_request`
+middleware, tools and a slash command. It does not do tool-risk gating, so it is adjacent
+rather than competing, but it is where the mature Jev-on-Hermes practice lives.
+
+Others worth knowing: `ajensenwaud/hermes-jev-plugin` (four decision tools),
+`ourines/hermes-jev` (explicit tools, "no automatic tool gating"), `Pinutss/jev-*`
+(skill + MCP routers for agents/models/memory), `rsdkrasen/hermes-jev-router`
+(tool-result compaction), `scursel/hermes-jev-fastpath` (`llm_request`/`tool_execution`
+middleware fast paths), `litshing/hermes-jev-plugins` (context pruning, memory gating),
+`AlphaPerseii3000/jev-effort-router` (`llm_request` model routing).
+
+### What is actually, still, different here
+
+After checking the field, the honest residue is small:
+
+- **OpenRouter credential *plus* enforcement.** Other OpenRouter-transport work is
+  shadow-only or advisory; other enforced gates want `TYPESAFE_API_KEY` or
+  `AI_GATEWAY_API_KEY`. If you have an OpenRouter key and no TypeSafe account, and you
+  want a gate that actually escalates and blocks, this is currently the narrow gap it
+  fills.
+- **Conversation-aware state.** `pre_llm_call` intent capture feeding the gate, so Jev
+  judges a call against the request *and prior turns*, not just the current tool call.
+- **Documented reliability engineering**, measured rather than asserted: the 8 s timeout
   (tail latency to 7.5 s), retry-with-backoff for the intermittent Cloudflare 403, the
-  circuit breaker, and the no-point-retrying block message.
+  circuit breaker, the logged fail-opens, and the no-point-retrying block message.
 
-**Where the alternatives are genuinely better, and what this should adopt:**
+### What this should adopt from the alternatives
 
-- **`jev-approvals`** ([anpicasso/hermes-jev-approvals](https://github.com/anpicasso/hermes-jev-approvals),
-  MIT, v0.3.0) is the strongest solution to the adjacent problem. Instead of adding a
-  hook, it replaces Hermes's `auxiliary.approval` reviewer under `approvals.mode: smart`,
-  registers no hooks, and works with core as shipped — so it gates *exactly the commands
-  core already flags* rather than re-implementing detection. It reports measured results
-  (8.7× faster, 4.4× fewer prompts on 153 real commands) and asks six typed questions
-  including `self_advocating`, a prompt-injection check on whether the command argues for
-  its own approval. If your interest is *approvals*, look there first.
 - **Question decomposition.** This plugin asks one authorization question plus a risk
   score. The evidence says that is the weaker design:
   [jev-harness-lab](https://github.com/Aitejiu/jev-harness-lab) measured orthogonal
   decomposition plus code composition beating a single fuzzy question (shell-gate false
-  positives 14.5% → 1.8%), and `jev-approvals`' six-question contract reflects the same
-  lesson. Splitting `authorized` into independent conditions — intent coverage, blast
-  radius, secret exposure, outbound transmission, self-advocacy — is the obvious next
-  improvement here, and the reason to treat the current single-noul version as v0.1.
-- **Provider surfaces.** Others cover TypeSafe-direct, Vercel AI Gateway, Cloudflare AI,
-  and the native `@typesafe-ai` SDK. This one covers OpenRouter only.
+  positives 14.5% → 1.8%); `jev-approvals` asks six questions; `hermes-jev-guard` asks one
+  sharper one (destructive/irreversible?) rather than a general authorization noul.
+  Splitting `authorized` into independent conditions — intent coverage, blast radius,
+  secret exposure, outbound transmission, self-advocacy — is the obvious next step, and
+  the reason to treat this as v0.1.
+- **`self_advocating`.** Nothing here defends against a command that argues for its own
+  approval. `jev-approvals` and `kerpopule/hermes-jev-skills` (its injection screen) both
+  treat that as first-class.
+- **Redaction.** `kerpopule/hermes-jev-skills` redacts emails, phones, tokens and long hex
+  before anything leaves the machine, and refuses to send states that look like
+  credentials. This plugin clips length but does **not** redact. `hermes-jev-guard`'s
+  approach — score one sharp question and scope `risk_tools` tightly — also limits what
+  leaves.
 
 ## Caveats
 
@@ -227,14 +271,17 @@ What is actually different here:
 - **Jev judges, it does not choose.** This constrains calls after the model has chosen
   them. It cannot make the model pick a better tool, and it cannot rewrite arguments. If
   the real problem is bad tool selection, the lever is tool descriptions and skill
-  routing, not a post-hoc gate. (For that problem see the `pre_llm_call` skill-routing
-  plugins: `jev-skill-router`, `typesafe-skill-router`.)
+  routing, not a post-hoc gate.
 - **Not a security boundary.** A calibrated second opinion. Approvals, guardrails and the
   sandbox remain the enforcement layer.
+- **It may rarely fire.** A comparable gate measured 0 escalations and 0 blocks across 38
+  real tool calls (mean risk 0.057). Expect a quiet log.
+- **No redaction.** Bounded length only; see "What leaves the machine".
 - **The thresholds are untuned on your traffic.** The calibration gap is wide enough that
   0.60/0.35 handled every case measured here, but that is one machine. Run in `observe`
   and check the log.
-- **Plugin settings are read once per process**; changing them needs a restart.
+- **Plugin settings are read once per process**; changing them needs a restart. Enabling
+  affects newly started processes — a running gateway picks it up on its next restart.
 
 ## Testing
 
