@@ -1,5 +1,23 @@
 # hermes-jev-tool-gate
 
+> **Status: archived — closed September 2026.** Not recommended for use. It works and
+> passes `hermes plugins validate` / `doctor`, but it was closed after checking the field:
+> the approve/deny gate it implements is redundant with Hermes's own layered approval path
+> (`approval_detection.py` patterns + the injection-hardened `approval_smart.py` reviewer +
+> `path_security.py`), and at least two plugins cover the same ground with more capability —
+> [`hermes-jev-guard`](https://github.com/rubichandrap/hermes-jev-guard) (same three-band
+> escalation, plus a plan, done-check and tier middleware) and
+> [`jev-approvals`](https://github.com/anpicasso/hermes-jev-approvals) (the right way: it
+> *replaces* the smart reviewer instead of stacking a hook on top).
+>
+> Measurements that motivated the close are kept below because they are still useful:
+> the calibration gap (p≈0.95 authorized vs p≈0.01 unauthorized), ~$0.000018 per call,
+> the 7.5 s latency tail, and the ~3% intermittent Cloudflare 403.
+>
+> If you want a Jev tool-risk gate today, use `hermes-jev-guard`. If you want Jev at all,
+> the better shapes are typed classification behind a deterministic floor — see the
+> comparison section.
+
 Gate [Hermes Agent](https://github.com/NousResearch/hermes-agent) tool calls with
 **Jev**, TypeSafe AI's System One decision model, over the OpenRouter System One /
 Decisions API.
